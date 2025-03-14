@@ -1,0 +1,148 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+from itertools import combinations
+
+# Constants
+GRID_SIZE = 32
+NUM_SPOTS = 10
+NUM_PASS = 5
+VALUES = list(range(10))
+
+def generate_agent(gender):
+    """Generate a random agent with 10 spots."""
+    spots = []
+    coords = set()
+    while len(spots) < NUM_SPOTS:
+        x, y = random.randint(0, GRID_SIZE-1), random.randint(0, GRID_SIZE-1)
+        if (x, y) not in coords:
+            coords.add((x, y))
+            value = random.choice(VALUES)
+            # 0 is gender-specific, 9 is X, 1-8 are random
+            if len(spots) == 0:
+                spot_type = 'y' if gender == 'male' else 'x'
+            elif len(spots) == 9:
+                spot_type = 'X'
+            else:
+                spot_type = random.choice(['x', 'y', 'X'] if gender == 'female' else ['y', 'x', 'X'])
+            spots.append({'coord': (x, y), 'value': value, 'type': spot_type})
+    return spots
+
+def fill_grid(spots):
+    """Fill the 32x32 grid based on spot rules."""
+    grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
+    for spot in spots:
+        x, y = spot['coord']
+        val = spot['value']
+        if spot['type'] in ['x', 'y']:
+            # Fill row
+            for i in range(GRID_SIZE):
+                grid[y, i] = (val + abs(x - i)) % 10
+        elif spot['type'] == 'X':
+            # Fill column
+            for i in range(GRID_SIZE):
+                grid[i, x] = (val + abs(y - i)) % 10
+    return grid
+
+def get_crossings(spots):
+    """Find crossing points between row and column spots."""
+    row_spots = [s for s in spots if s['type'] in ['x', 'y']]
+    col_spots = [s for s in spots if s['type'] == 'X']
+    crossings = []
+    for r in row_spots:
+        for c in col_spots:
+            rx, ry = r['coord']
+            cx, cy = c['coord']
+            val = (r['value'] + c['value']) % 10  # Combine values
+            crossings.append({'coord': (cx, ry), 'value': val})
+    return crossings
+
+def compute_fitness(crossings):
+    """Compute total length of lines between all pairs of crossings."""
+    total_length = 0
+    for (c1, c2) in combinations(crossings, 2):
+        x1, y1 = c1['coord']
+        x2, y2 = c2['coord']
+        # Treat as complex plane: real=x, imag=y
+        dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+        total_length += dist
+    return total_length
+
+def assign_biome_directions(spots):
+    """Assign gender biome and directions to each spot."""
+    biome = {}
+    directions = {}
+    for spot in spots:
+        val = spot['value']
+        biome[val] = spot['type']
+        directions[val] = {
+            'vertical': random.choice(['up', 'down']),
+            'horizontal': random.choice(['left', 'right'])
+        }
+    return biome, directions
+
+def combine_agents(male, female):
+    """Combine two agents to create a new agent."""
+    # Male passes 5 y to male offspring, 5 X to female offspring
+    # Female passes 5 x to female offspring, 5 X to male offspring
+    male_y = [s for s in male if s['type'] == 'y']
+    male_X = [s for s in male if s['type'] == 'X']
+    female_x = [s for s in female if s['type'] == 'x']
+    female_X = [s for s in female if s['type'] == 'X']
+    
+    # Randomly select 5 of each
+    new_male = random.sample(male_y, 5) + random.sample(female_X, 5)
+    new_female = random.sample(female_x, 5) + random.sample(male_X, 5)
+    return new_male, new_female
+
+def evaluate_partner(male, female):
+    """Evaluate a pair of agents and their potential offspring."""
+    # Generate offspring
+    new_male, new_female = combine_agents(male, female)
+    
+    # Process each agent
+    agents = {'male': male, 'female': female, 'new_male': new_male, 'new_female': new_female}
+    results = {}
+    
+    for name, agent in agents.items():
+        grid = fill_grid(agent)
+        crossings = get_crossings(agent)
+        fitness = compute_fitness(crossings)
+        biome, directions = assign_biome_directions(agent)
+        results[name] = {
+            'grid': grid,
+            'crossings': crossings,
+            'fitness': fitness,
+            'biome': biome,
+            'directions': directions
+        }
+    
+    return results
+
+def visualize_results(results):
+    """Visualize the grids and crossings."""
+    fig, axs = plt.subplots(2, 2, figsize=(12, 12))
+    titles = ['Male', 'Female', 'New Male', 'New Female']
+    for ax, title in zip(axs.flat, titles):
+        grid = results[title.lower().replace(' ', '_')]['grid']
+        crossings = results[title.lower().replace(' ', '_')]['crossings']
+        ax.imshow(grid, cmap='viridis')
+        for c in crossings:
+            x, y = c['coord']
+            ax.plot(x, y, 'ro', markersize=5)
+        ax.set_title(title)
+    plt.tight_layout()
+    plt.show()
+
+# Example usage
+male = generate_agent('male')
+female = generate_agent('female')
+results = evaluate_partner(male, female)
+visualize_results(results)
+
+# Print results
+for name, data in results.items():
+    print(f"\n{name.upper()}:")
+    print(f"Fitness: {data['fitness']:.2f}")
+    print(f"Biome: {data['biome']}")
+    print(f"Directions: {data['directions']}")
